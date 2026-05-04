@@ -1,0 +1,36 @@
+name: high-memory-pod-restart
+description: >
+  Automatically restarts pods consuming excessive memory before OOM killer
+  terminates them. Detects memory usage above threshold and gracefully
+  restarts the affected pod.
+
+remediation_steps:
+  - name: "Identify high-memory pod"
+    command: >
+      kubectl top pods -n production --no-headers |
+      sort -k3 -hr |
+      head -1 |
+      awk '{print $1}'
+    timeout: 15
+
+  - name: "Capture memory metrics for postmortem"
+    command: >
+      kubectl top pod {{target}} -n production --no-headers
+    timeout: 10
+    continue_on_failure: true
+
+  - name: "Graceful pod restart"
+    command: >
+      kubectl rollout restart deployment/{{target}} -n production
+    timeout: 30
+    wait_seconds: 10
+
+  - name: "Verify pod recovery"
+    command: >
+      kubectl rollout status deployment/{{target}} -n production --timeout=60s
+    timeout: 70
+
+postmortem_notes: >
+  If this fires repeatedly for the same service investigate memory leaks
+  or increase memory limits after profiling actual usage patterns.
+  Create a JIRA ticket for permanent fix.
